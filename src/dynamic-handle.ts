@@ -151,7 +151,9 @@ export const createDynamicHandler = (app: AnyElysia) => {
 			const { handle, hooks, validator, content, route, rawBody } = handler.store
 
 			const bodySchema = resolveBodySchema(validator, rawBody, {
+				// @ts-expect-error private property
 				type: app.definitions.type,
+				// @ts-expect-error private property
 				typebox: app.definitions.typebox
 			})
 
@@ -533,7 +535,7 @@ export const createDynamicHandler = (app: AnyElysia) => {
 
 				const bodyValidator = validator.createBody?.()
 				if (bodyValidator) {
-					let checkResult = bodyValidator.Check(body)
+					let checkResult: any = bodyValidator.Check(body)
 					if (checkResult instanceof Promise) checkResult = await checkResult
 
 					// Handle StandardSchema validation result

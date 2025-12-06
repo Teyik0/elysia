@@ -669,7 +669,7 @@ describe.each([{ aot: true }, { aot: false }])("Nested FormData with file(s) sup
 		})
 	})
 
-	describe.skip("Zod (for standard schema) with File and nested Object", () => {
+	describe("Zod (for standard schema) with File and nested Object", () => {
 		const bunFilePath6 = `${import.meta.dir}/../images/aris-yuzu.jpg`;
 		const bunFile = Bun.file(bunFilePath6) as File;
 
