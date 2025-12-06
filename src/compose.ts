@@ -880,6 +880,11 @@ export const composeHandler = ({
 				parser = 'formdata'
 		}
 
+		const hasFiles = validator.body?.schema && (
+			(hasType('File', validator.body.schema) || hasType('Files', validator.body.schema)) ||
+			('~standard' in validator.body.schema)
+		)
+
 		if (parser && defaultParsers.includes(parser)) {
 			const reporter = report('parse', {
 				total: hooks.parse?.length
@@ -913,7 +918,27 @@ export const composeHandler = ({
 
 				case 'formdata':
 				case 'multipart/form-data':
-					fnLiteral += adapter.parser.formData(isOptionalBody)
+					if (hasFiles) {
+						// Enhanced parser with JSON parsing for Files
+						fnLiteral += '\nc.body={}\n'
+						if (isOptionalBody)
+							fnLiteral += `let form;try{form=await c.request.formData()}catch{}\n`
+						else
+							fnLiteral += `const form=await c.request.formData()\n`
+
+						fnLiteral += `if(form){for(const key of form.keys()){` +
+							`if(c.body[key])continue;` +
+							`const values=form.getAll(key);` +
+							`const parsed=values.map(v=>{` +
+							`if(v instanceof File)return v;` +
+							`if(typeof v==='string'){` +
+							`const t=v.trim();const fc=t.charCodeAt(0);` +
+							`if(fc===123||fc===91){try{return JSON.parse(t)}catch{}}` +
+							`}return v});` +
+							`c.body[key]=parsed.length===1?parsed[0]:parsed}}\n`
+					} else {
+						fnLiteral += adapter.parser.formData(isOptionalBody)
+					}
 					break
 
 				default:
@@ -975,8 +1000,31 @@ export const composeHandler = ({
 					adapter.parser.arrayBuffer(isOptionalBody) +
 					`break` +
 					`\n` +
-					`case 114:` +
-					adapter.parser.formData(isOptionalBody) +
+					`case 114:`
+
+				if (hasFiles) {
+					// Enhanced parser with JSON parsing for Files
+					fnLiteral += '\nc.body={}\n'
+					if (isOptionalBody)
+						fnLiteral += `let form;try{form=await c.request.formData()}catch{}\n`
+					else
+						fnLiteral += `const form=await c.request.formData()\n`
+
+					fnLiteral += `if(form){for(const key of form.keys()){` +
+						`if(c.body[key])continue;` +
+						`const values=form.getAll(key);` +
+						`const parsed=values.map(v=>{` +
+						`if(v instanceof File)return v;` +
+						`if(typeof v==='string'){` +
+						`const t=v.trim();const fc=t.charCodeAt(0);` +
+						`if(fc===123||fc===91){try{return JSON.parse(t)}catch{}}` +
+						`}return v});` +
+						`c.body[key]=parsed.length===1?parsed[0]:parsed}}\n`
+				} else {
+					fnLiteral += adapter.parser.formData(isOptionalBody)
+				}
+
+				fnLiteral +=
 					`break` +
 					`\n` +
 					`default:` +
@@ -1037,8 +1085,27 @@ export const composeHandler = ({
 							case 'formdata':
 							case 'multipart/form-data':
 								hasDefaultParser = true
-								fnLiteral +=
-									adapter.parser.formData(isOptionalBody)
+								if (hasFiles) {
+									// Enhanced parser with JSON parsing for Files
+									fnLiteral += '\nc.body={}\n'
+									if (isOptionalBody)
+										fnLiteral += `let form;try{form=await c.request.formData()}catch{}\n`
+									else
+										fnLiteral += `const form=await c.request.formData()\n`
+
+									fnLiteral += `if(form){for(const key of form.keys()){` +
+										`if(c.body[key])continue;` +
+										`const values=form.getAll(key);` +
+										`const parsed=values.map(v=>{` +
+										`if(v instanceof File)return v;` +
+										`if(typeof v==='string'){` +
+										`const t=v.trim();const fc=t.charCodeAt(0);` +
+										`if(fc===123||fc===91){try{return JSON.parse(t)}catch{}}` +
+										`}return v});` +
+										`c.body[key]=parsed.length===1?parsed[0]:parsed}}\n`
+								} else {
+									fnLiteral += adapter.parser.formData(isOptionalBody)
+								}
 
 								break
 

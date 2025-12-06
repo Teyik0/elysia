@@ -126,12 +126,12 @@ export const hasAdditionalProperties = (
 /**
  * Resolve a schema that might be a model reference (string) to the actual schema
  */
- export const resolveSchema = (
+export const resolveSchema = (
 	schema: TAnySchema | string | undefined,
 	models?: Record<string, TAnySchema | StandardSchemaV1Like>,
 	modules?: TModule<any, any>
- ): TAnySchema | StandardSchemaV1Like | undefined => {
-    if (!schema) return undefined
+): TAnySchema | StandardSchemaV1Like | undefined => {
+	if (!schema) return undefined
 	if (typeof schema !== 'string') return schema
 
 	// Check modules first (higher priority)
@@ -142,7 +142,7 @@ export const hasAdditionalProperties = (
 
 	// Then check models
 	return models?.[schema]
- }
+}
 
 export const hasType = (type: string, schema: TAnySchema): boolean => {
 	if (!schema) return false
