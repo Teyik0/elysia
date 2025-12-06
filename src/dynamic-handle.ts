@@ -10,7 +10,7 @@ import {
 } from './error'
 import type { AnyElysia, CookieOptions } from './index'
 import { parseQuery } from './parse-query'
-import type { ElysiaTypeCheck } from './schema'
+import { hasType, type ElysiaTypeCheck } from './schema'
 import type { TypeCheck } from './type-system'
 import type { Handler, LifeCycleStore, SchemaValidator } from './types'
 import { redirect, StatusMap, signCookie } from './utils'
@@ -22,6 +22,45 @@ export type DynamicHandler = {
 	hooks: Partial<LifeCycleStore>
 	validator?: SchemaValidator
 	route: string
+	rawBody?: any // Raw body schema for static File detection (avoids eager compilation when aot: false)
+}
+
+/**
+ * Resolve body schema without triggering compilation (for File detection).
+ * Handles: compiled schemas, raw schemas, string model references, and StandardSchema.
+ */
+const resolveBodySchema = (
+	validator: SchemaValidator | undefined,
+	rawBody: any,
+	definitions: { type: Record<string, any>; typebox: any }
+): any => {
+	if (!validator) return undefined
+
+	// If already compiled (AOT mode or after first request), use compiled schema
+	if (validator.body?.schema) {
+		return validator.body.schema
+	}
+
+	// No raw schema available
+	if (!rawBody) return undefined
+
+	// StandardSchema: return as-is (can't introspect structure without compilation)
+	if (typeof rawBody === 'object' && '~standard' in rawBody) {
+		return rawBody
+	}
+
+	// String model reference: resolve from definitions
+	if (typeof rawBody === 'string') {
+		// Check TypeBox module first
+		if (definitions.typebox && rawBody in definitions.typebox.$defs) {
+			return definitions.typebox.Import(rawBody)
+		}
+		// Fallback to models registry
+		return definitions.type[rawBody]
+	}
+
+	// Direct TypeBox schema: return as-is
+	return rawBody
 }
 
 const injectDefaultValues = (
@@ -109,7 +148,17 @@ export const createDynamicHandler = (app: AnyElysia) => {
 				throw new NotFoundError()
 			}
 
-			const { handle, hooks, validator, content, route } = handler.store
+			const { handle, hooks, validator, content, route, rawBody } = handler.store
+
+			const bodySchema = resolveBodySchema(validator, rawBody, {
+				type: app.definitions.type,
+				typebox: app.definitions.typebox
+			})
+
+			const hasFiles = bodySchema && (
+				(hasType('File', bodySchema) || hasType('Files', bodySchema)) ||
+				('~standard' in bodySchema)
+			)
 
 			let body: string | Record<string, any> | undefined
 			if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -132,19 +181,32 @@ export const createDynamicHandler = (app: AnyElysia) => {
 							break
 
 						case 'multipart/form-data': {
-							body = {}
+    						body = {}
+    						const form = await request.formData()
+    						for (const key of form.keys()) {
+    							if (body[key]) continue
 
-							const form = await request.formData()
-							for (const key of form.keys()) {
-								if (body[key]) continue
-
-								const value = form.getAll(key)
-								if (value.length === 1) body[key] = value[0]
-								else body[key] = value
-							}
-
-							break
-						}
+    							const values = form.getAll(key)
+                                if (hasFiles) {
+                                    const parsed = values.map(v => {
+                                        if (v instanceof File) return v
+                                        if (typeof v === 'string') {
+                                            const t = v.trim()
+                                            const fc = t.charCodeAt(0)
+                                            if (fc === 123 || fc === 91) {
+                                                try { return JSON.parse(t) } catch { }
+                                            }
+                                        }
+                                        return v
+                                    })
+                                    body[key] = parsed.length === 1 ? parsed[0] : parsed
+                                } else {
+                                    if (values.length === 1) body[key] = values[0]
+                                    else body[key] = values
+                                }
+                            }
+      						break
+                        }
 					}
 				} else {
 					let contentType
@@ -189,21 +251,32 @@ export const createDynamicHandler = (app: AnyElysia) => {
 
 										case 'formdata':
 										case 'multipart/form-data': {
-											body = {}
+                      						body = {}
+                      						const form = await request.formData()
+                      						for (const key of form.keys()) {
+                     							if (body[key]) continue
 
-											const form =
-												await request.formData()
-											for (const key of form.keys()) {
-												if (body[key]) continue
-
-												const value = form.getAll(key)
-												if (value.length === 1)
-													body[key] = value[0]
-												else body[key] = value
-											}
-
-											break
-										}
+                     							const values = form.getAll(key)
+                                                if (hasFiles) {
+                                                    const parsed = values.map(v => {
+                                                        if (v instanceof File) return v
+                                                        if (typeof v === 'string') {
+                                                            const t = v.trim()
+                                                            const fc = t.charCodeAt(0)
+                                                            if (fc === 123 || fc === 91) {
+                                                                try { return JSON.parse(t) } catch { }
+                                                            }
+                                                        }
+                                                        return v
+                                                    })
+                                                    body[key] = parsed.length === 1 ? parsed[0] : parsed
+                                                } else {
+                                                    if (values.length === 1) body[key] = values[0]
+                                                    else body[key] = values
+                                                }
+                                            }
+                      						break
+                                        }
 
 										default: {
 											const parser = app['~parser'][hook]
@@ -258,20 +331,32 @@ export const createDynamicHandler = (app: AnyElysia) => {
 									break
 
 								case 'multipart/form-data': {
-									body = {}
+              						body = {}
+              						const form = await request.formData()
+              						for (const key of form.keys()) {
+             							if (body[key]) continue
 
-									const form = await request.formData()
-									for (const key of form.keys()) {
-										if (body[key]) continue
-
-										const value = form.getAll(key)
-										if (value.length === 1)
-											body[key] = value[0]
-										else body[key] = value
-									}
-
-									break
-								}
+             							const values = form.getAll(key)
+                                        if (hasFiles) {
+                                            const parsed = values.map(v => {
+                                                if (v instanceof File) return v
+                                                if (typeof v === 'string') {
+                                                    const t = v.trim()
+                                                    const fc = t.charCodeAt(0)
+                                                    if (fc === 123 || fc === 91) {
+                                                        try { return JSON.parse(t) } catch { }
+                                                    }
+                                                }
+                                                return v
+                                            })
+                                            body[key] = parsed.length === 1 ? parsed[0] : parsed
+                                        } else {
+                                            if (values.length === 1) body[key] = values[0]
+                                            else body[key] = values
+                                        }
+                                    }
+              						break
+                                }
 							}
 						}
 					}
@@ -446,10 +531,27 @@ export const createDynamicHandler = (app: AnyElysia) => {
 						) as any
 				}
 
-				if (validator.createBody?.()?.Check(body) === false)
-					throw new ValidationError('body', validator.body!, body)
-				else if (validator.body?.Decode)
+				const bodyValidator = validator.createBody?.()
+				if (bodyValidator) {
+					let checkResult = bodyValidator.Check(body)
+					if (checkResult instanceof Promise) checkResult = await checkResult
+
+					// Handle StandardSchema validation result
+					if (checkResult && typeof checkResult === 'object' && ('issues' in checkResult || 'value' in checkResult)) {
+						// StandardSchema returns {value: ...} or {issues: ...}
+						if (checkResult.issues)
+							throw new ValidationError('body', validator.body!, body)
+						else if ('value' in checkResult)
+							context.body = checkResult.value as any
+					} else if (checkResult === false) {
+						// TypeBox returns boolean
+						throw new ValidationError('body', validator.body!, body)
+					} else if (validator.body?.Decode) {
+						context.body = validator.body.Decode(body) as any
+					}
+				} else if (validator.body?.Decode) {
 					context.body = validator.body.Decode(body) as any
+				}
 			}
 
 			if (hooks.beforeHandle)

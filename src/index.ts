@@ -47,8 +47,7 @@ import {
 	getResponseSchemaValidator,
 	getCookieValidator,
 	ElysiaTypeCheck,
-	hasType,
-	resolveSchema,
+    hasType,
 } from './schema'
 import {
 	composeHandler,
@@ -588,13 +587,7 @@ export default class Elysia<
 							dynamic,
 							models,
 							normalize,
-							additionalCoerce: (() => {
-								const resolved = resolveSchema(cloned.body, models, modules)
-								// Only check for Files if resolved schema is a TypeBox schema (has Kind symbol)
-								return (resolved && Kind in resolved && (hasType('File', resolved) || hasType('Files', resolved)))
-									? coerceFormData()
-									: coercePrimitiveRoot()
-							})(),
+							additionalCoerce: coercePrimitiveRoot(),
 							validators: standaloneValidators.map((x) => x.body),
 							sanitize
 						}),
@@ -656,13 +649,7 @@ export default class Elysia<
 									dynamic,
 									models,
 									normalize,
-									additionalCoerce: (() => {
-										const resolved = resolveSchema(cloned.body, models, modules)
-										// Only check for Files if resolved schema is a TypeBox schema (has Kind symbol)
-										return (resolved && Kind in resolved && (hasType('File', resolved) || hasType('Files', resolved)))
-											? coerceFormData()
-											: coercePrimitiveRoot()
-									})(),
+									additionalCoerce: coercePrimitiveRoot(),
 									validators: standaloneValidators.map(
 										(x) => x.body
 									),
@@ -796,7 +783,8 @@ export default class Elysia<
 				hooks,
 				content: localHook?.type as string,
 				handle,
-				route: path
+				route: path,
+				rawBody: cloned.body
 			})
 
 			const encoded = encodePath(path, { dynamic: true })
@@ -806,7 +794,8 @@ export default class Elysia<
 					hooks,
 					content: localHook?.type as string,
 					handle,
-					route: path
+					route: path,
+					rawBody: cloned.body
 				})
 			}
 
@@ -817,7 +806,8 @@ export default class Elysia<
 					hooks,
 					content: localHook?.type as string,
 					handle,
-					route: path
+					route: path,
+					rawBody: cloned.body
 				})
 
 				const encoded = encodePath(loosePath)
@@ -827,7 +817,8 @@ export default class Elysia<
 						hooks,
 						content: localHook?.type as string,
 						handle,
-						route: path
+						route: path,
+						rawBody: cloned.body
 					})
 			}
 
