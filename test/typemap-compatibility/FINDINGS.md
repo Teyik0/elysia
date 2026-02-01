@@ -1,68 +1,28 @@
-# Phase 0: TypeBox 1.0 + TypeMap Compatibility Analysis
+# Phase 0: TypeBox 0.34 + TypeMap Compatibility Analysis
 
 ## Executive Summary
 
-Cette analyse révèle des **blockers critiques** pour l'adoption immédiate de TypeMap avec Elysia, mais confirme que TypeBox 1.0 est viable pour une migration future.
+**Décision: Rester sur TypeBox 0.34 + TypeMap avec fallback Standard Schema.**
+
+L'approche fonctionne maintenant - Valibot est optimisé (3.7x boost), Zod/ArkType utilisent le fallback natif.
 
 ---
 
-## Findings Critiques
+## Notes Techniques
 
-### 1. TypeMap Incompatible avec Zod 4.x
+### TypeMap et Zod 4.x
 
-| Problème | Impact |
-|----------|--------|
-| TypeMap 0.10.1 requiert `zod@^3.24.1` | Elysia utilise `zod@^4.1.5` |
-| `TypeError: Right hand side of instanceof is not an object` | Conversion Zod → TypeBox impossible |
+TypeMap 0.10.1 requiert Zod 3.x - la conversion Zod → TypeBox échoue avec Zod 4.x.
+**Solution:** Fallback sur `~standard.validate` pour Zod (fonctionne, perf native).
 
-**Erreur observée:**
-```
-TypeError: Right hand side of instanceof is not an object
-  at FromType (typebox-from-zod.mjs:175:49)
-```
-
-**Action requise:** Attendre mise à jour TypeMap pour Zod 4.x support
-
----
-
-### 2. TypeMap Produit TypeBox 0.34, Pas 1.0
+### TypeMap Produit TypeBox 0.34
 
 | Package | Version | Format |
 |---------|---------|--------|
 | `@sinclair/typebox` | 0.34.x | `Symbol(Kind)` |
-| `typebox` | 1.0.x | `~kind` property |
 | TypeMap output | 0.34 | `Symbol(Kind)` |
 
-**Implication:** On ne peut pas utiliser TypeMap pour générer des schémas TypeBox 1.0 directement.
-
----
-
-### 3. TypeBox 1.0 API Changes
-
-#### Transform → Codec
-```typescript
-// TypeBox 0.34
-Type.Transform(schema).Decode(...).Encode(...)
-// Résultat: schema[TransformKind] = true
-
-// TypeBox 1.0
-Type.Codec(schema).Decode(...).Encode(...)
-// Résultat: schema['~codec'] = { decode, encode }
-// NOTE: ~kind reste le type original (Union, Object, etc.)
-```
-
-#### Symbols → Properties
-```typescript
-// 0.34                    // 1.0
-schema[Kind]          →    schema['~kind']
-schema[OptionalKind]  →    schema['~optional']
-schema[TransformKind] →    schema['~codec']
-```
-
-#### Types Supprimés
-- `Type.Date` → Créer custom type avec `Type.Unsafe<Date>`
-- `Type.Uint8Array` → Créer custom type
-- `Type.Recursive` → Utiliser `Type.Cyclic`
+**OK pour nous** - Elysia utilise déjà TypeBox 0.34.
 
 ---
 
@@ -110,54 +70,47 @@ Cela valide l'approche de conversion Standard Schema → TypeBox pour la perform
 
 ---
 
-## Stratégie Recommandée (Mise à Jour)
+## Décision Finale
 
-### Option A: Attendre TypeMap 1.0 (Recommandé)
-
-**Prérequis:**
-1. TypeMap supporte Zod 4.x
-2. TypeMap produit TypeBox 1.0 schemas
-3. TypeMap supporté/maintenu activement
-
-**Timeline estimée:** Dépend de @sinclairzx81
-
-### Option B: Migration TypeBox 1.0 Sans TypeMap
-
-**Approche:**
-1. Migrer Elysia vers TypeBox 1.0
-2. Garder Standard Schema via `['~standard'].validate` comme fallback
-3. Pas de compilation optimisée pour Zod/Valibot (utilise leur validation native)
+### TypeBox 0.34 + TypeMap + Fallback Standard Schema
 
 ```typescript
-// Adapter simplifié sans TypeMap
+// src/validation/adapter.ts
+import { TypeBox } from '@sinclair/typemap'
+import { TypeCompiler, Kind } from '@sinclair/typebox'
+
 export function toValidator(schema: unknown) {
-  // TypeBox 1.0 - compilation optimisée
-  if (isTypeBox10(schema)) {
-    return Compile(schema)
+  // Déjà TypeBox? Compile direct
+  if (schema && Kind in schema) {
+    return TypeCompiler.Compile(schema)
   }
 
-  // Standard Schema - validation native (pas de boost perf)
-  if ('~standard' in schema) {
-    return schema['~standard']
+  // Essayer TypeMap (Valibot optimisé, Zod échoue → fallback)
+  const converted = TypeBox(schema)
+  if (converted?.[Kind] !== 'Never') {
+    return TypeCompiler.Compile(converted)
   }
 
-  throw new Error('Unsupported schema')
+  // Fallback Standard Schema (Zod, ArkType, autres)
+  return schema['~standard']
 }
 ```
 
-**Avantages:**
-- Pas de dépendance externe problématique
-- Migration plus simple
-- Performance TypeBox native
+### Résultat par Librairie
 
-**Inconvénients:**
-- Zod/Valibot restent 6x plus lents que TypeBox
+| Lib | Chemin | Performance |
+|-----|--------|-------------|
+| TypeBox | Direct compile | Optimisé |
+| Valibot | TypeMap → TypeBox | Optimisé (3.7x boost) |
+| Zod 4.x | Fallback ~standard | Native (acceptable) |
+| ArkType | Fallback ~standard | Native |
 
-### Option C: Fork/Contribuer à TypeMap
+### Pourquoi cette approche?
 
-Contribuer au projet TypeMap pour:
-1. Support Zod 4.x
-2. Output TypeBox 1.0
+1. **Fonctionne maintenant** - Pas d'attente sur TypeMap updates
+2. **Pas de régression** - Elysia utilise déjà TypeBox 0.34
+3. **Fallback robuste** - Zod/ArkType marchent via Standard Schema
+4. **Évolutif** - Quand TypeMap supporte TypeBox 1.0, migration simple
 
 ---
 
@@ -177,30 +130,14 @@ bun test test/typemap-compatibility/validation.test.ts
 
 ## Conclusion
 
-**TypeMap n'est pas prêt pour Elysia aujourd'hui** à cause de:
-1. Incompatibilité Zod 4.x
-2. Output TypeBox 0.34 (pas 1.0)
+**TypeBox 0.34 + TypeMap est viable maintenant** avec fallback Standard Schema.
 
-**Recommandation:**
-1. Ouvrir une issue sur TypeMap pour Zod 4.x + TypeBox 1.0 support
-2. En attendant, planifier migration TypeBox 1.0 seul (Option B)
-3. Ajouter TypeMap quand il sera compatible
+- Valibot: Optimisé via TypeMap (3.7x plus rapide)
+- Zod/ArkType: Fallback Standard Schema (fonctionne, perf native)
 
----
+### Prochaines Étapes
 
-## Dépendances Actuelles vs Requises
-
-```json
-// Actuel (package.json)
-{
-  "peerDependencies": {
-    "@sinclair/typebox": ">= 0.34.0 < 1"
-  },
-  "devDependencies": {
-    "zod": "^4.1.5",
-    "@sinclair/typemap": "^0.10.1"  // Requiert zod@^3.24.1
-  }
-}
-
-// Conflit: TypeMap veut Zod 3.x, Elysia utilise Zod 4.x
-```
+1. Implémenter `src/validation/adapter.ts` avec le pattern ci-dessus
+2. Intégrer dans `getSchemaValidator()` de `schema.ts`
+3. Ajouter `@sinclair/typemap` comme peer dependency optionnelle
+4. Tests d'intégration avec Zod, Valibot, ArkType
