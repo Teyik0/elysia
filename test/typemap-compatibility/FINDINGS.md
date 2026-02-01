@@ -72,45 +72,39 @@ Cela valide l'approche de conversion Standard Schema → TypeBox pour la perform
 
 ## Décision Finale
 
-### TypeBox 0.34 + TypeMap + Fallback Standard Schema
+### TypeBox 0.34 + Standard Schema (avec TypeMap opt-in)
+
+**Important**: TypeMap conversion est opt-in, pas automatique.
+La conversion automatique peut perdre des contraintes de validation (literals, unions).
 
 ```typescript
-// src/validation/adapter.ts
-import { TypeBox } from '@sinclair/typemap'
-import { TypeCompiler, Kind } from '@sinclair/typebox'
+// Standard Schema utilise la validation native par défaut (fiable)
+// TypeMap est disponible pour opt-in via:
+import { tryConvertToTypeBox } from 'elysia/validation'
 
-export function toValidator(schema: unknown) {
-  // Déjà TypeBox? Compile direct
-  if (schema && Kind in schema) {
-    return TypeCompiler.Compile(schema)
-  }
-
-  // Essayer TypeMap (Valibot optimisé, Zod échoue → fallback)
-  const converted = TypeBox(schema)
-  if (converted?.[Kind] !== 'Never') {
-    return TypeCompiler.Compile(converted)
-  }
-
-  // Fallback Standard Schema (Zod, ArkType, autres)
-  return schema['~standard']
+// Utilisation opt-in pour optimiser Valibot:
+const valibotSchema = v.object({ name: v.string() })
+const typeboxSchema = tryConvertToTypeBox(valibotSchema)
+if (typeboxSchema) {
+  // Use compiled TypeBox (3.7x faster)
 }
 ```
 
 ### Résultat par Librairie
 
-| Lib | Chemin | Performance |
-|-----|--------|-------------|
-| TypeBox | Direct compile | Optimisé |
-| Valibot | TypeMap → TypeBox | Optimisé (3.7x boost) |
-| Zod 4.x | Fallback ~standard | Native (acceptable) |
-| ArkType | Fallback ~standard | Native |
+| Lib | Chemin par défaut | Avec opt-in TypeMap |
+|-----|-------------------|---------------------|
+| TypeBox | Direct compile | Direct compile |
+| Valibot | ~standard.validate | TypeMap → TypeBox (3.7x boost) |
+| Zod 4.x | ~standard.validate | Non supporté |
+| ArkType | ~standard.validate | Non supporté |
 
-### Pourquoi cette approche?
+### Pourquoi opt-in?
 
-1. **Fonctionne maintenant** - Pas d'attente sur TypeMap updates
-2. **Pas de régression** - Elysia utilise déjà TypeBox 0.34
-3. **Fallback robuste** - Zod/ArkType marchent via Standard Schema
-4. **Évolutif** - Quand TypeMap supporte TypeBox 1.0, migration simple
+1. **Pas de régression** - Comportement existant préservé
+2. **Conversion imparfaite** - TypeMap peut perdre des contraintes (literals, unions)
+3. **Choix utilisateur** - Performance vs fiabilité selon le cas d'usage
+4. **Évolutif** - Automatisation possible quand TypeMap sera plus mature
 
 ---
 
