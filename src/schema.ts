@@ -17,6 +17,7 @@ import {
 } from 'exact-mirror'
 
 import { t, type TypeCheck } from './type-system'
+import { tryConvertToTypeBox } from './validation'
 
 import { mergeCookie, mergeDeep, randomId } from './utils'
 import { mapValueError } from './error'
@@ -462,6 +463,9 @@ export const getSchemaValidator = <
 	const mapSchema = (
 		s: string | TSchema | StandardSchemaV1Like | undefined
 	): TSchema | StandardSchemaV1Like => {
+		// Standard Schema (Valibot, Zod, ArkType, etc.)
+		// Use native ~standard.validate for reliable validation
+		// TypeMap conversion is available via tryConvertToTypeBox() for opt-in optimization
 		if (s && typeof s !== 'string' && '~standard' in s)
 			return s as StandardSchemaV1Like
 
